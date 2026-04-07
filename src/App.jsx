@@ -424,7 +424,6 @@ function SortableScene({ scene, index, total, sceneImg, uploadedImgs, onUpdate, 
             </select>
           </div>
           {scene.voice && <div style={{marginTop:4,padding:"4px 8px",borderRadius:6,background:T.card,fontSize:10,color:T.txD,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} onClick={e=>e.stopPropagation()}>🎙 {scene.voice}</div>}
-          </div>
           {uploadedImgs.length>0 && (
             <div style={{display:"flex",gap:4,marginTop:6,alignItems:"center"}}>
               <span style={{fontSize:11,color:T.txD}}>Ảnh:</span>
