@@ -798,8 +798,15 @@ export default function App() {
               {!p.nk&&<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:T.gnS,color:T.gnT,marginTop:4,display:"inline-block"}}>No key</span>}
             </button>)}
           </div>
-          {currentProv?.nk && <input type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="Paste API key..." style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${T.bdr}`,background:T.card,color:T.tx,fontSize:13,outline:"none",marginBottom:8,boxSizing:"border-box"}}/>}
-          <div style={{fontSize:12,fontWeight:600,color:T.tx2,marginTop:8,marginBottom:4}}>🎙 Voiceover (ElevenLabs — free 10K chars/tháng)</div>
+          {currentProv?.nk && <div style={{marginBottom:6}}>
+            <input type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="Paste API key..." style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${T.bdr}`,background:T.card,color:T.tx,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+            <div style={{fontSize:11,color:T.txD,marginTop:4}}>
+              {prov==="groq"&&<>Lấy key: <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" style={{color:T.acT}}>console.groq.com/keys</a></>}
+              {prov==="gemini"&&<>Lấy key: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" style={{color:T.acT}}>aistudio.google.com/apikey</a></>}
+              {prov==="openai"&&<>Lấy key: <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" style={{color:T.acT}}>platform.openai.com/api-keys</a></>}
+            </div>
+          </div>}
+          <div style={{fontSize:12,fontWeight:600,color:T.tx2,marginTop:8,marginBottom:4}}>🎙 Voiceover — <a href="https://elevenlabs.io" target="_blank" rel="noopener noreferrer" style={{color:T.acT}}>elevenlabs.io</a> (free 10K chars/tháng)</div>
           <div style={{display:"flex",gap:6,marginBottom:8}}>
             <input type="password" value={elKey} onChange={e=>setElKey(e.target.value)} placeholder="ElevenLabs API key (elevenlabs.io)" style={{flex:1,padding:"10px 14px",borderRadius:10,border:`1px solid ${T.bdr}`,background:T.card,color:T.tx,fontSize:12,outline:"none",boxSizing:"border-box"}}/>
             <select value={voiceId} onChange={e=>setVoiceId(e.target.value)} style={{padding:"10px",borderRadius:10,border:`1px solid ${T.bdr}`,background:T.card,color:T.tx,fontSize:12,outline:"none"}}>
@@ -809,12 +816,12 @@ export default function App() {
 
           <div style={{fontSize:12,fontWeight:700,color:T.orT,marginTop:14,marginBottom:8,paddingTop:10,borderTop:`1px solid ${T.bdr}`}}>⭐ Premium (tuỳ chọn — chất lượng cao hơn)</div>
 
-          <div style={{fontSize:11,color:T.txD,marginBottom:4}}>🎨 DALL-E 3 — ảnh đẹp hơn Pollinations (OpenAI key, ~$0.04/ảnh)</div>
+          <div style={{fontSize:11,color:T.txD,marginBottom:4}}>🎨 DALL-E 3 — <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" style={{color:T.acT}}>Lấy key tại đây</a> (~$0.04/ảnh)</div>
           <input type="password" value={dalleKey} onChange={e=>setDalleKey(e.target.value)} placeholder="OpenAI API key cho DALL-E 3 (tuỳ chọn)" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${T.bdr}`,background:T.card,color:T.tx,fontSize:12,outline:"none",marginBottom:8,boxSizing:"border-box"}}/>
 
-          <div style={{fontSize:11,color:T.txD,marginBottom:4}}>🎭 HeyGen — AI avatar/người thật nói trong video ($24/tháng)</div>
+          <div style={{fontSize:11,color:T.txD,marginBottom:4}}>🎭 HeyGen — <a href="https://app.heygen.com/settings/api" target="_blank" rel="noopener noreferrer" style={{color:T.acT}}>Lấy key tại đây</a> ($24/tháng)</div>
           <input type="password" value={heygenKey} onChange={e=>setHeygenKey(e.target.value)} placeholder="HeyGen API key (heygen.com)" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${T.bdr}`,background:T.card,color:T.tx,fontSize:12,outline:"none",marginBottom:8,boxSizing:"border-box"}}/>
-          <div style={{fontSize:12,fontWeight:600,color:T.gnT,marginTop:4,marginBottom:4}}>🚀 Replicate Pipeline — video clips + Flux ảnh + XTTS voice ($0.05/video)</div>
+          <div style={{fontSize:12,fontWeight:600,color:T.gnT,marginTop:4,marginBottom:4}}>🚀 Replicate — <a href="https://replicate.com/account/api-tokens" target="_blank" rel="noopener noreferrer" style={{color:T.gnT}}>Lấy token tại đây</a> ($0.05/video, $5 free credit)</div>
           <input type="password" value={replicateKey} onChange={e=>setReplicateKey(e.target.value)} placeholder="Replicate API token (replicate.com/account/api-tokens)" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1px solid ${T.bdr}`,background:T.card,color:T.tx,fontSize:12,outline:"none",marginBottom:12,boxSizing:"border-box"}}/>
 
           <div style={{padding:"10px",borderRadius:8,background:T.card,fontSize:11,color:T.txD,lineHeight:1.6,marginBottom:12}}>
