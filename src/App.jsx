@@ -255,11 +255,79 @@ function loadVideo(url) {
   })
 }
 
+/* ═══ AUTO BACKGROUND BEAT (Web Audio — no upload needed) ═══ */
+function generateBeat(audioCtx, duration, bpm = 105) {
+  const sr = audioCtx.sampleRate
+  const len = Math.ceil(sr * duration)
+  const buf = audioCtx.createBuffer(2, len, sr)
+  const L = buf.getChannelData(0), R = buf.getChannelData(1)
+  const beatSamples = Math.floor(60 / bpm * sr)
+  const eighthSamples = beatSamples / 2
+
+  for (let i = 0; i < len; i++) {
+    const beatPos = i % beatSamples
+    const eighthPos = i % eighthSamples
+    const t = beatPos / sr
+    const et = eighthPos / sr
+
+    // Kick: beats 1 and 3 (soft, lo-fi)
+    if (beatPos < sr * 0.08) {
+      const env = Math.exp(-t * 40)
+      L[i] += Math.sin(2 * Math.PI * (80 - t * 400) * t) * env * 0.25
+      R[i] += L[i]
+    }
+
+    // Hi-hat: every 8th note (soft noise burst)
+    if (eighthPos < sr * 0.015) {
+      const env = Math.exp(-et * 200)
+      const noise = (Math.random() * 2 - 1) * env * 0.08
+      L[i] += noise; R[i] += noise
+    }
+
+    // Sub bass: follows kick, octave lower
+    if (beatPos < sr * 0.15 && (Math.floor(i / beatSamples) % 2 === 0)) {
+      const env = Math.exp(-t * 15)
+      const bass = Math.sin(2 * Math.PI * 40 * t) * env * 0.15
+      L[i] += bass; R[i] += bass
+    }
+
+    // Soft pad chord (ambient warmth)
+    const padEnv = 0.03
+    L[i] += Math.sin(2 * Math.PI * 220 * (i/sr)) * padEnv * Math.sin(Math.PI * (i % (beatSamples*4)) / (beatSamples*4))
+    R[i] += Math.sin(2 * Math.PI * 277 * (i/sr)) * padEnv * Math.sin(Math.PI * (i % (beatSamples*4)) / (beatSamples*4))
+  }
+  return buf
+}
+
+/* ═══ PARTICLE/EMOJI EFFECTS ═══ */
+const SCENE_EMOJIS = ["✨","💕","🔥","⭐","💫","🎁","💪","😂","❤️","🌟"]
+function drawParticles(ctx, W, H, progress, sceneIdx, time) {
+  const emoji = SCENE_EMOJIS[sceneIdx % SCENE_EMOJIS.length]
+  const count = 5
+  ctx.font = `${W*0.035}px sans-serif`
+  ctx.textAlign = "center"
+  for (let i = 0; i < count; i++) {
+    const seed = sceneIdx * 100 + i * 37
+    const x = ((Math.sin(seed) * 0.5 + 0.5) * 0.8 + 0.1) * W
+    const baseY = H * 0.3 + (i / count) * H * 0.5
+    const y = baseY - progress * H * 0.15 - Math.sin(time * 2 + i) * 10
+    const a = Math.sin(progress * Math.PI) * 0.4
+    if (a > 0.05) {
+      ctx.globalAlpha = a
+      ctx.fillText(emoji, x + Math.sin(time * 3 + i * 2) * 8, y)
+    }
+  }
+  ctx.globalAlpha = 1
+}
+
 /* ═══ CANVAS RENDERER (text animations + stronger motion) ═══ */
 const TEXT_ANIMS = ["static","typewriter","pop","slideUp","wave"]
 
-function drawScene(ctx, W, H, img, text, sub, progress, transition, fontCSS = "'DM Sans',sans-serif", textAnim = "typewriter") {
+function drawScene(ctx, W, H, img, text, sub, progress, transition, fontCSS = "'DM Sans',sans-serif", textAnim = "typewriter", sceneIdx = 0) {
   ctx.clearRect(0,0,W,H); ctx.fillStyle="#08080e"; ctx.fillRect(0,0,W,H)
+
+  // Flash on scene start (TikTok cut feel)
+  const flashAlpha = progress < 0.04 ? (1 - progress/0.04) * 0.6 : 0
 
   // Transition
   let alpha=1,offX=0,offY=0,scale=1
@@ -270,106 +338,139 @@ function drawScene(ctx, W, H, img, text, sub, progress, transition, fontCSS = "'
   else if (transition==="zoom") scale=.85+ease*.15
   ctx.save(); ctx.globalAlpha=alpha; ctx.translate(offX,offY)
 
-  // Image/Video with STRONGER Ken Burns + subtle zoom pulse
+  // Image with CROP VARIATIONS — same photo looks like different shots
   const isVid = img instanceof HTMLVideoElement
   const imgReady = isVid ? (img.readyState >= 2) : (img?.complete && img.naturalWidth)
   if (imgReady) {
-    const kb = 1 + progress * 0.1
-    const pulse = 1 + Math.sin(progress * Math.PI * 2) * 0.008
     const iw = isVid ? img.videoWidth : img.naturalWidth
     const ih = isVid ? img.videoHeight : img.naturalHeight
-    const ratio = Math.max(W/iw,H/ih) * kb * scale * pulse
-    const dw=iw*ratio, dh=ih*ratio
-    const panX = Math.sin(progress * Math.PI) * W * 0.03
-    ctx.drawImage(img, (W-dw)/2 - panX, (H-dh)/2, dw, dh)
+    const variation = sceneIdx % 6 // 6 different "shots" from same image
+
+    let sx=0, sy=0, sw=iw, sh=ih // source crop
+    let extraZoom = 1, panX = 0, panY = 0
+
+    if (variation === 0) { // Full shot + Ken Burns
+      extraZoom = 1 + progress * 0.1
+      panX = Math.sin(progress * Math.PI) * W * 0.03
+    } else if (variation === 1) { // Zoom into center (product detail)
+      sx = iw * 0.2; sy = ih * 0.2; sw = iw * 0.6; sh = ih * 0.6
+      extraZoom = 1 + progress * 0.05
+      panY = -progress * H * 0.02
+    } else if (variation === 2) { // Zoom top half
+      sh = ih * 0.6
+      extraZoom = 1.1 + progress * 0.08
+      panX = -Math.sin(progress * Math.PI) * W * 0.04
+    } else if (variation === 3) { // Zoom bottom half (product detail)
+      sy = ih * 0.4; sh = ih * 0.6
+      extraZoom = 1.1 + progress * 0.06
+      panX = Math.cos(progress * Math.PI) * W * 0.03
+    } else if (variation === 4) { // Slow zoom out (dramatic)
+      extraZoom = 1.2 - progress * 0.15
+      panY = progress * H * 0.01
+    } else { // Slight tilt/rotation feel via pan
+      extraZoom = 1.05 + progress * 0.08
+      panX = Math.sin(progress * Math.PI * 2) * W * 0.04
+      panY = Math.cos(progress * Math.PI) * H * 0.02
+    }
+
+    const pulse = 1 + Math.sin(progress * Math.PI * 2) * 0.005
+    const ratio = Math.max(W/(sw||1), H/(sh||1)) * extraZoom * scale * pulse
+    const dw = (sw||iw) * ratio, dh = (sh||ih) * ratio
+    ctx.drawImage(img, sx, sy, sw||iw, sh||ih, (W-dw)/2 + panX, (H-dh)/2 + panY, dw, dh)
   }
 
-  // Gradient
-  const grad=ctx.createLinearGradient(0,H*.35,0,H)
+  // Gradient overlay
+  const grad=ctx.createLinearGradient(0,H*.3,0,H)
   grad.addColorStop(0,"rgba(8,8,14,0)")
-  grad.addColorStop(.3,"rgba(8,8,14,.7)")
-  grad.addColorStop(1,"rgba(8,8,14,.95)")
-  ctx.fillStyle=grad; ctx.fillRect(0,H*.35,W,H*.65)
+  grad.addColorStop(.25,"rgba(8,8,14,.5)")
+  grad.addColorStop(1,"rgba(8,8,14,.92)")
+  ctx.fillStyle=grad; ctx.fillRect(0,H*.3,W,H*.7)
 
-  // Text with animation
+  // Text — TikTok caption style with background highlight
   if (text) {
-    const textProgress = Math.max(0, (progress - 0.06) * 5) // 0→1
+    const textProgress = Math.max(0, (progress - 0.05) * 5)
     const tp = Math.min(1, textProgress)
-    ctx.fillStyle="#fff"
-    ctx.font=`bold ${Math.round(W*.052)}px ${fontCSS}`
+    ctx.font=`bold ${Math.round(W*.05)}px ${fontCSS}`
     ctx.textAlign="center"
-    ctx.shadowColor="rgba(0,0,0,.9)"; ctx.shadowBlur=18
 
     // Word wrap
     const words=text.split(" "), lines=[]; let line=""
-    for (const w of words) { const test=line?line+" "+w:w; if(ctx.measureText(test).width>W*.85&&line){lines.push(line);line=w}else line=test }
+    for (const w of words) { const test=line?line+" "+w:w; if(ctx.measureText(test).width>W*.82&&line){lines.push(line);line=w}else line=test }
     if (line) lines.push(line)
-    const lineH=W*.066, baseY=H*.69-(lines.length*lineH)/2
+    const lineH=W*.068, baseY=H*.67-(lines.length*lineH)/2
+
+    // Caption highlight boxes (TikTok style)
+    const drawTextWithBg = (txt, x, y, a) => {
+      ctx.globalAlpha = a
+      const tw = ctx.measureText(txt).width
+      // Background box
+      ctx.fillStyle = "rgba(0,0,0,0.65)"
+      const pad = W * 0.015
+      ctx.beginPath()
+      const bx=x-tw/2-pad*2, by=y-lineH*0.7, bw=tw+pad*4, bh=lineH*1.1
+      ctx.roundRect(bx, by, bw, bh, W*0.01)
+      ctx.fill()
+      // Text
+      ctx.fillStyle = "#ffffff"
+      ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 4
+      ctx.fillText(txt, x, y)
+      ctx.shadowBlur = 0
+    }
 
     if (textAnim === "typewriter") {
-      // Typewriter: reveal characters over time
-      const totalChars = text.length
-      const visibleChars = Math.floor(tp * totalChars * 1.2)
+      const totalChars = text.length, visibleChars = Math.floor(tp * totalChars * 1.3)
       let charCount = 0
-      ctx.globalAlpha = 1
       lines.forEach((l, i) => {
-        const lineStart = charCount
-        const lineEnd = charCount + l.length
-        if (lineStart < visibleChars) {
-          const visible = l.slice(0, Math.max(0, visibleChars - lineStart))
-          ctx.fillText(visible, W/2, baseY + i*lineH)
+        if (charCount < visibleChars) {
+          const visible = l.slice(0, Math.max(0, visibleChars - charCount))
+          drawTextWithBg(visible, W/2, baseY + i*lineH, 1)
         }
-        charCount = lineEnd + 1
+        charCount += l.length + 1
       })
     } else if (textAnim === "pop") {
-      // Pop: scale from 0 to 1 with bounce
       const popScale = tp < 0.5 ? tp * 2 * 1.15 : 1 + (1 - tp) * 0.15
-      ctx.globalAlpha = tp
       ctx.save()
       ctx.translate(W/2, baseY + (lines.length*lineH)/2)
       ctx.scale(Math.min(popScale, 1.15), Math.min(popScale, 1.15))
       ctx.translate(-W/2, -(baseY + (lines.length*lineH)/2))
-      lines.forEach((l, i) => ctx.fillText(l, W/2, baseY + i*lineH))
+      lines.forEach((l, i) => drawTextWithBg(l, W/2, baseY + i*lineH, tp))
       ctx.restore()
     } else if (textAnim === "slideUp") {
-      // Slide up from bottom
-      const slideOffset = (1 - tp) * H * 0.15
-      ctx.globalAlpha = tp
-      lines.forEach((l, i) => ctx.fillText(l, W/2, baseY + i*lineH + slideOffset))
+      const slideOffset = (1 - tp) * H * 0.12
+      lines.forEach((l, i) => drawTextWithBg(l, W/2, baseY + i*lineH + slideOffset, tp))
     } else if (textAnim === "wave") {
-      // Each word appears with slight delay
-      ctx.globalAlpha = 1
-      let wordIdx = 0
-      const totalWords = text.split(" ").length
+      let wordIdx = 0; const totalWords = text.split(" ").length
       lines.forEach((l, i) => {
-        const lineWords = l.split(" ")
-        let x = W/2 - ctx.measureText(l).width/2
+        const lineWords = l.split(" "); let x = W/2 - ctx.measureText(l).width/2
         lineWords.forEach(w => {
-          const wordProgress = Math.max(0, Math.min(1, (tp * totalWords - wordIdx) * 2))
-          const wOff = (1 - wordProgress) * 20
-          ctx.globalAlpha = wordProgress
-          ctx.fillText(w, x + ctx.measureText(w).width/2, baseY + i*lineH + wOff)
-          x += ctx.measureText(w + " ").width
-          wordIdx++
+          const wp = Math.max(0, Math.min(1, (tp * totalWords - wordIdx) * 2))
+          drawTextWithBg(w, x + ctx.measureText(w).width/2, baseY + i*lineH + (1-wp)*15, wp)
+          x += ctx.measureText(w + " ").width; wordIdx++
         })
       })
     } else {
-      // Static
-      ctx.globalAlpha = tp
-      lines.forEach((l, i) => ctx.fillText(l, W/2, baseY + i*lineH))
+      lines.forEach((l, i) => drawTextWithBg(l, W/2, baseY + i*lineH, tp))
     }
-    ctx.shadowBlur=0
   }
 
-  // Subtext with fade
+  // Subtext
   if (sub) {
     const subP = Math.min(1, Math.max(0, (progress-.25)*4))
     ctx.globalAlpha = subP
-    ctx.fillStyle=T.acT; ctx.font=`600 ${Math.round(W*.03)}px ${fontCSS}`
-    const subOffset = (1 - subP) * 10
-    ctx.fillText(sub, W/2, H*.86 + subOffset)
+    ctx.fillStyle=T.acT; ctx.font=`600 ${Math.round(W*.028)}px ${fontCSS}`
+    ctx.fillText(sub, W/2, H*.87)
   }
+
   ctx.restore()
+
+  // Floating emoji particles
+  drawParticles(ctx, W, H, progress, sceneIdx, sceneIdx + progress * 3)
+
+  // Flash overlay (on top of everything)
+  if (flashAlpha > 0) {
+    ctx.fillStyle = `rgba(255,255,255,${flashAlpha})`
+    ctx.fillRect(0, 0, W, H)
+  }
 }
 
 /* ═══ SORTABLE SCENE (dnd-kit) ═══ */
@@ -468,11 +569,14 @@ export default function App() {
   const [showSettings,setShowSettings] = useState(false)
   const [prov,setProv] = useState(() => { try{return JSON.parse(localStorage.getItem("pod-c"))?.p||"auto"}catch{return"auto"} })
   const [apiKey,setApiKey] = useState(() => { try{return JSON.parse(localStorage.getItem("pod-c"))?.k||""}catch{return""} })
-  const [inputMode,setInputMode] = useState("upload")
+  const [inputMode,setInputMode] = useState("product")
   const [images,setImages] = useState([])
   const [htmlSrc,setHtmlSrc] = useState("")
   const [ideaText,setIdeaText] = useState("")
   const [productInfo,setProductInfo] = useState("")
+  const [productName,setProductName] = useState("")
+  const [productNiche,setProductNiche] = useState("")
+  const [videoDuration,setVideoDuration] = useState(15)
   const [loading,setLoading] = useState(false)
   const [loadMsg,setLoadMsg] = useState("")
   const [toast,setToast] = useState({m:"",t:""})
@@ -500,6 +604,8 @@ export default function App() {
   const [heygenLoading,setHeygenLoading] = useState(false)
   const [templates,setTemplates] = useState(() => { try{return JSON.parse(localStorage.getItem("pod-tpl"))||[]}catch{return[]} })
   const [showTpl,setShowTpl] = useState(false)
+  const [showAdvanced,setShowAdvanced] = useState(false)
+  const [refineText,setRefineText] = useState("")
   const [lang,setLang] = useState(() => localStorage.getItem("pod-lang") || "vi")
   const [converting,setConverting] = useState(false)
   const [mp4Blob,setMp4Blob] = useState(null)
@@ -606,23 +712,65 @@ export default function App() {
   }
 
   const genIdeas = async () => {
-    if(!images.length&&!productInfo){notify("Cần ảnh hoặc thông tin SP","warn");return} setLoading(true);setLoadMsg("AI đang tạo 4 ý tưởng (auto-retry)...")
+    if(!images.length&&!productInfo&&!productName&&!ideaText){notify("Nhập thông tin SP hoặc ý tưởng","warn");return} setLoading(true);setLoadMsg("AI đang tạo 4 ý tưởng (auto-retry)...")
     try{
-      const d=await aiJSON(prov,apiKey,`Viral TikTok video strategist for POD US. You create COMPLETE video plans including voiceover scripts.\nPRODUCT:${productInfo||"POD product"}\nIMAGES:${images.length}\nFonts: dm(clean), playfair(elegant), space(geometric), marker(handwritten), bebas(tall condensed).\nText animations: typewriter(type in), pop(bounce scale), slideUp(slide from bottom), wave(word by word), static.\nGenerate 4 concepts. ONLY valid JSON:\n{"ideas":[{"title":"name","format":"Gift Idea/Humor/Before-After/Trend/Unboxing/Process","description":"2 sentences","viral_score":8,"why":"1 sentence","scenes":[{"duration":3,"image_index":0,"text":"max 8 words English overlay","subtext":"optional small text","transition":"fade","font":"best font id","textAnim":"best animation","voice":"VOICEOVER SCRIPT for narrator to speak during this scene. Natural, casual, engaging TikTok narration style. 1-2 short sentences.","ai_bg":"Detailed Pollinations prompt: beautiful 9:16 vertical scene. Always provide."}],"total_duration":15,"caption":"TikTok <150 chars emoji","hashtags":["t1","t2","t3","t4","t5"],"sound":"trending sound","full_voiceover":"Complete voiceover script all scenes combined, natural flow","invideo_prompt":"Full InVideo AI prompt for TikTok 9:16. Detailed.","kling_prompt":"Kling AI: ONE cinematic scene."}]}\nRules:image_index 0-${Math.max(0,images.length-1)},first=hook 3s,last=CTA,15-30s,2-5s each. ALWAYS provide ai_bg + voice + font + textAnim. Voice should sound like popular TikTok narration - casual, engaging, with personality.`)
+      const prodDesc = productInfo || productName || ideaText || "POD product"
+      const hasImgs = images.length > 0
+      const d=await aiJSON(prov,apiKey,`Bạn là chuyên gia TikTok viral cho POD (thị trường Mỹ).
+
+SẢN PHẨM: ${prodDesc}
+${productNiche?"NICHE: "+productNiche:""}
+${hasImgs?`Seller có ${images.length} ẢNH SẢN PHẨM THẬT. Video dùng ảnh thật. Text và voice phải mô tả CỤ THỂ sản phẩm trong ảnh.`:"Không có ảnh — AI gen ảnh. ai_bg phải mô tả ảnh CÓ SẢN PHẨM ${productName||"POD"} trong khung hình (close-up, flat lay, on person), KHÔNG gen phong cảnh."}
+THỜI LƯỢNG: ${videoDuration}s
+
+4 ý tưởng. JSON ONLY:
+{"ideas":[{"title":"TIẾNG VIỆT","format":"Gift Idea/Humor/Before-After/Trend","description":"TIẾNG VIỆT 2 câu","viral_score":8,"why":"TIẾNG VIỆT",
+"scenes":[{"duration":3,"image_index":${hasImgs?"scene_number % "+images.length:"0"},
+"text":"ENGLISH — CỤ THỂ cho SP này. VD: 'This nurse tee says it all 😂' KHÔNG DÙNG 'New Alert' hay 'Amazing Product'",
+"subtext":"ENGLISH ngắn",
+"transition":"fade","font":"dm","textAnim":"typewriter",
+"voice":"ENGLISH voiceover CỤ THỂ — phải NÓI TÊN sản phẩm: 'Check out this hilarious nurse t-shirt that says...' KHÔNG NÓI chung chung.",
+"ai_bg":"${hasImgs?"backup only":"Close-up product shot: "+prodDesc+" on aesthetic background, 9:16, product MUST be visible"}"}],
+"total_duration":${videoDuration},
+"caption":"ENGLISH caption cụ thể cho SP <150 chars",
+"hashtags":["niche","tags"],
+"sound":"tên sound cụ thể trên TikTok",
+"full_voiceover":"ENGLISH — KỂ CÂU CHUYỆN về ${productName||prodDesc} từ đầu đến cuối, tự nhiên, hấp dẫn",
+"invideo_prompt":"ENGLISH prompt chi tiết","kling_prompt":"ENGLISH prompt"}]}
+
+${videoDuration}s, ${videoDuration<=15?"3-5":videoDuration<=30?"5-8":videoDuration<=60?"8-12":"12-20"} scenes. Hook đầu, CTA cuối.`)
       if(!d?.ideas?.length)throw new Error("Thử lại"); setIdeas(d);setStep("2")
     }catch(e){notify(e.message,"err")} setLoading(false)
   }
 
   const selectIdea = async idx => {
     const idea=ideas.ideas[idx]; if(!idea?.scenes)return; let idC=0
-    const built=idea.scenes.map(s=>({_id:"sc-"+(idC++),duration:s.duration||3,image_index:Math.min(s.image_index||0,Math.max(0,images.length-1)),text:s.text||"",subtext:s.subtext||"",transition:s.transition||"fade",ai_bg:s.ai_bg||"",font:FONTS.find(f=>f.id===s.font)?s.font:"dm",textAnim:TEXT_ANIMS.includes(s.textAnim)?s.textAnim:"typewriter",voice:s.voice||""}))
+    const built=idea.scenes.map((s,si)=>({_id:"sc-"+(idC++),duration:s.duration||3,image_index:images.length>0?(si%images.length):0,text:s.text||"",subtext:s.subtext||"",transition:s.transition||"fade",ai_bg:s.ai_bg||"",font:FONTS.find(f=>f.id===s.font)?s.font:"dm",textAnim:TEXT_ANIMS.includes(s.textAnim)?s.textAnim:"typewriter",voice:s.voice||""}))
     setScenes(built);setExtData({inv:idea.invideo_prompt,kl:idea.kling_prompt,cap:idea.caption,ht:idea.hashtags,snd:idea.sound,title:idea.title,format:idea.format,rawIdea:idea,fullVoice:idea.full_voiceover||""});setVideoBlob(null);setMp4Blob(null);setSceneImgs({});setSceneVideos({});setUndoStack([]);setVoiceUrl(null);setStep("3")
-    setAutoGenning(true)
-    for(let i=0;i<built.length;i++){if(built[i].ai_bg){try{const img=await generateImage(built[i].ai_bg,dalleKey,replicateKey);setSceneImgs(p=>({...p,[i]:img}))}catch{}}}
-    setAutoGenning(false);notify(dalleKey?L.imgGenDone+" (DALL-E 3)":L.imgGenDone,"ok")
-    // Auto-gen voiceover audio
+
+    // Images: use uploaded product photos if available, AI gen only as fallback
+    if(images.length===0){
+      setAutoGenning(true)
+      for(let i=0;i<built.length;i++){if(built[i].ai_bg){try{const img=await generateImage(built[i].ai_bg,dalleKey,replicateKey);setSceneImgs(p=>({...p,[i]:img}))}catch{}}}
+      setAutoGenning(false)
+      notify("Ảnh AI đã gen (upload ảnh SP thật sẽ đẹp hơn!)","ok")
+    } else {
+      notify(`Dùng ${images.length} ảnh SP đã upload ✅`,"ok")
+    }
+
+    // Voiceover: ALWAYS generate (not optional)
     const fullScript=idea.full_voiceover||built.map(s=>s.voice).filter(Boolean).join('. ')
-    if(fullScript){setVoiceGenning(true);const url=await generateTTS(fullScript,elKey,voiceId);if(url){setVoiceUrl(url);notify("🎙 Voiceover ready!","ok")}else{notify("Voice: preview only (add ElevenLabs key for HD)","info")};setVoiceGenning(false)}
+    if(fullScript){
+      setVoiceGenning(true)
+      let voiceOk = false
+      const url=await generateTTS(fullScript,elKey,voiceId)
+      if(url){setVoiceUrl(url);voiceOk=true;notify("🎙 Voiceover sẵn sàng!","ok")}
+      else{
+        try{const url2=await generateTTS(fullScript.slice(0,200),elKey,voiceId);if(url2){setVoiceUrl(url2);voiceOk=true;notify("🎙 Voiceover OK (short)","ok")}}catch{}
+        if(!voiceOk)notify("⚠️ Voiceover lỗi — thêm ElevenLabs key hoặc thử lại","warn")
+      }
+      setVoiceGenning(false)
+    }
   }
 
   // ── Scene ops ──
@@ -647,7 +795,7 @@ export default function App() {
     const cv=canvasRef.current; if(!cv||!scenes.length)return; const ctx=cv.getContext("2d"),W=cv.width,H=cv.height
     const{idx,progress}=getSceneAt(t); const sc=scenes[idx]; if(!sc)return
     const fontCSS = (FONTS.find(f=>f.id===sc.font) || FONTS[0]).css
-    drawScene(ctx,W,H,getSceneImage(sc,idx),sc.text,sc.subtext,progress,sc.transition,fontCSS,sc.textAnim||"typewriter")
+    drawScene(ctx,W,H,getSceneImage(sc,idx),sc.text,sc.subtext,progress,sc.transition,fontCSS,sc.textAnim||"typewriter",idx)
     if(!forRec){ctx.fillStyle=T.ac;ctx.fillRect(0,H-4,(t/Math.max(totalDuration,.1))*W,4)}
   },[scenes,images,sceneImgs,totalDuration])
 
@@ -677,11 +825,19 @@ export default function App() {
     if(isRecording||!scenes.length)return; const cv=canvasRef.current; if(!cv)return
     setIsRecording(true);setVideoBlob(null);setMp4Blob(null);recChunksRef.current=[]
     const cs=cv.captureStream(30)
-    // Mix audio: create FRESH audio elements to avoid createMediaElementSource crash
+    // Mix audio: create FRESH audio elements + auto beat
     const ac=new AudioContext(); const dest=ac.createMediaStreamDestination()
-    let hasAudio=false
-    if(audioUrl){try{const a=new Audio(audioUrl);a.crossOrigin="anonymous";a.loop=true;const src=ac.createMediaElementSource(a);const gain=ac.createGain();gain.gain.value=0.3;src.connect(gain);gain.connect(dest);a.play().catch(()=>{});hasAudio=true}catch{}}
-    if(voiceUrl){try{const v=new Audio(voiceUrl);v.crossOrigin="anonymous";const src2=ac.createMediaElementSource(v);src2.connect(dest);v.play().catch(()=>{});hasAudio=true}catch{}}
+    // Auto background beat (always plays, quieter if voice/music present)
+    try{
+      const beatBuf=generateBeat(ac,totalDuration+2)
+      const beatSrc=ac.createBufferSource();beatSrc.buffer=beatBuf;beatSrc.loop=true
+      const beatGain=ac.createGain();beatGain.gain.value=(audioUrl||voiceUrl)?0.12:0.25
+      beatSrc.connect(beatGain);beatGain.connect(dest)
+      beatSrc.start()
+    }catch{}
+    let hasAudio=true // beat always provides audio
+    if(audioUrl){try{const a=new Audio(audioUrl);a.crossOrigin="anonymous";a.loop=true;const src=ac.createMediaElementSource(a);const gain=ac.createGain();gain.gain.value=0.3;src.connect(gain);gain.connect(dest);a.play().catch(()=>{})}catch{}}
+    if(voiceUrl){try{const v=new Audio(voiceUrl);v.crossOrigin="anonymous";const src2=ac.createMediaElementSource(v);const vGain=ac.createGain();vGain.gain.value=1.0;src2.connect(vGain);vGain.connect(dest);v.play().catch(()=>{})}catch{}}
     const fs = hasAudio ? new MediaStream([...cs.getVideoTracks(),...dest.stream.getAudioTracks()]) : cs
     const rec=new MediaRecorder(fs,{mimeType:"video/webm;codecs=vp9",videoBitsPerSecond:8e6})
     rec.ondataavailable=e=>{if(e.data.size>0)recChunksRef.current.push(e.data)}
@@ -755,7 +911,7 @@ export default function App() {
       const fontCSS=(FONTS.find(f=>f.id===sc.font)||FONTS[0]).css
       // Create temp canvas for scene
       const tc=document.createElement("canvas"); tc.width=thumbW; tc.height=thumbH
-      drawScene(tc.getContext("2d"),thumbW,thumbH,getSceneImage(sc,i),sc.text,sc.subtext,.5,sc.transition,fontCSS,sc.textAnim||"static")
+      drawScene(tc.getContext("2d"),thumbW,thumbH,getSceneImage(sc,i),sc.text,sc.subtext,.5,sc.transition,fontCSS,sc.textAnim||"static",i)
       ctx.drawImage(tc,x,y)
       // Label
       ctx.fillStyle=T.ac; ctx.font="bold 14px 'DM Sans',sans-serif"
@@ -862,13 +1018,31 @@ export default function App() {
 
         {/* Step 1 */}
         {step==="1" && <div className="fu">
-          <div style={{display:"flex",gap:0,marginBottom:16,borderBottom:`2px solid ${T.bdr}`,overflow:"auto"}}>{[{id:"upload",i:"📸",l:"Upload ảnh"},{id:"html",i:"🔗",l:"Paste HTML"},{id:"idea",i:"💡",l:"AI gợi ý"}].map(m=><button key={m.id} onClick={()=>setInputMode(m.id)} style={{padding:"12px 18px",borderBottom:inputMode===m.id?`3px solid ${T.ac}`:"3px solid transparent",color:inputMode===m.id?T.acT:T.txD,fontSize:13,fontWeight:600,background:"none",whiteSpace:"nowrap",border:"none"}}>{m.i} {m.l}</button>)}</div>
-          {inputMode==="upload" && <label style={{display:"flex",flexDirection:"column",alignItems:"center",padding:images.length?"16px":"40px 20px",borderRadius:14,border:`2px dashed ${T.bdrL}`,background:T.sf,cursor:"pointer"}}><input type="file" accept="image/*" multiple onChange={handleUpload} style={{display:"none"}}/><div style={{fontSize:32,marginBottom:8}}>📸</div><div style={{fontSize:14,color:T.tx2}}>Click upload ảnh</div></label>}
-          {inputMode==="html" && <div><div style={{padding:"10px 14px",borderRadius:10,background:T.orS,border:`1px solid ${T.or}25`,fontSize:12,color:T.orT,marginBottom:10,lineHeight:1.6}}>Mở trang SP → <b>Ctrl+U</b> → <b>Ctrl+A</b> → <b>Ctrl+C</b> → Paste ↓</div><textarea value={htmlSrc} onChange={e=>setHtmlSrc(e.target.value)} placeholder="Paste HTML..." rows={5} style={{width:"100%",padding:"12px",borderRadius:12,border:`1px solid ${T.bdr}`,background:T.card,color:T.tx,fontSize:12,outline:"none",resize:"vertical",boxSizing:"border-box",fontFamily:"monospace"}}/><button onClick={parseHTML} disabled={loading} style={{width:"100%",marginTop:8,padding:"14px",borderRadius:12,background:`linear-gradient(135deg,${T.ac},${T.pk})`,color:"#fff",fontSize:14,fontWeight:700,border:"none",opacity:loading?.5:1}}>{loading?"⏳":"🔍 AI đọc HTML"}</button></div>}
-          {inputMode==="idea" && <div><textarea value={ideaText} onChange={e=>setIdeaText(e.target.value)} placeholder={"• Áo funny gym bro\n• Quà Valentine dog mom"} rows={4} style={{width:"100%",padding:"12px",borderRadius:12,border:`1px solid ${T.bdr}`,background:T.card,color:T.tx,fontSize:14,outline:"none",resize:"vertical",boxSizing:"border-box",lineHeight:1.6}}/><button onClick={genFromIdea} disabled={loading} style={{width:"100%",marginTop:8,padding:"14px",borderRadius:12,background:`linear-gradient(135deg,${T.ac},${T.pk})`,color:"#fff",fontSize:14,fontWeight:700,border:"none",opacity:loading?.5:1}}>{loading?"⏳":"💡 AI gen concept"}</button></div>}
+          <div style={{display:"flex",gap:0,marginBottom:16,borderBottom:`2px solid ${T.bdr}`,overflow:"auto"}}>{[{id:"product",i:"📝",l:"Thông tin SP"},{id:"upload",i:"📸",l:"Upload ảnh"},{id:"html",i:"🔗",l:"Paste HTML"},{id:"idea",i:"💡",l:"AI gợi ý"}].map(m=><button key={m.id} onClick={()=>setInputMode(m.id)} style={{padding:"12px 14px",borderBottom:inputMode===m.id?`3px solid ${T.ac}`:"3px solid transparent",color:inputMode===m.id?T.acT:T.txD,fontSize:12,fontWeight:600,background:"none",whiteSpace:"nowrap",border:"none"}}>{m.i} {m.l}</button>)}</div>
+
+          {inputMode==="product" && <div>
+            <input value={productName} onChange={e=>setProductName(e.target.value)} placeholder="Tên sản phẩm (VD: Áo thun nurse funny, Mug cho dog mom...)" style={{width:"100%",padding:"12px",borderRadius:12,border:`1px solid ${T.bdr}`,background:T.card,color:T.tx,fontSize:14,outline:"none",marginBottom:8,boxSizing:"border-box"}}/>
+            <input value={productNiche} onChange={e=>setProductNiche(e.target.value)} placeholder="Đối tượng / niche (VD: y tá Mỹ, gym bro, cat lover, introvert...)" style={{width:"100%",padding:"12px",borderRadius:12,border:`1px solid ${T.bdr}`,background:T.card,color:T.tx,fontSize:14,outline:"none",marginBottom:8,boxSizing:"border-box"}}/>
+            <textarea value={ideaText} onChange={e=>setIdeaText(e.target.value)} placeholder={"Mô tả thêm (tuỳ chọn):\n• Design trên áo là gì?\n• Dòng chữ/quote gì?\n• Phong cách: funny, motivational, sarcastic?"} rows={3} style={{width:"100%",padding:"12px",borderRadius:12,border:`1px solid ${T.bdr}`,background:T.card,color:T.tx,fontSize:13,outline:"none",resize:"vertical",boxSizing:"border-box",lineHeight:1.6}}/>
+            {(productName||productNiche)&&<button onClick={()=>{setProductInfo(`Product: ${productName}\nNiche: ${productNiche}\nDetails: ${ideaText}`);notify("Đã lưu thông tin SP!","ok")}} style={{width:"100%",marginTop:8,padding:"14px",borderRadius:12,background:`linear-gradient(135deg,${T.ac},${T.bl})`,color:"#fff",fontSize:14,fontWeight:700,border:"none"}}>✅ Xác nhận thông tin SP</button>}
+          </div>}
+
+          {inputMode==="upload" && <label style={{display:"flex",flexDirection:"column",alignItems:"center",padding:images.length?"16px":"40px 20px",borderRadius:14,border:`2px dashed ${T.bdrL}`,background:T.sf,cursor:"pointer"}}><input type="file" accept="image/*" multiple onChange={handleUpload} style={{display:"none"}}/><div style={{fontSize:32,marginBottom:8}}>📸</div><div style={{fontSize:14,color:T.tx2}}>Click upload ảnh sản phẩm / mockup</div></label>}
+
+          {inputMode==="html" && <div><div style={{padding:"10px 14px",borderRadius:10,background:T.orS,border:`1px solid ${T.or}25`,fontSize:12,color:T.orT,marginBottom:10,lineHeight:1.6}}>Mở trang SP → <b>Ctrl+U</b> → <b>Ctrl+A</b> → <b>Ctrl+C</b> → Paste ↓ (paste <b>toàn bộ</b>, không chỉ cuối trang)</div><div style={{position:"relative"}}><textarea value={htmlSrc} onChange={e=>setHtmlSrc(e.target.value)} placeholder="Paste TOÀN BỘ HTML source code..." rows={5} style={{width:"100%",padding:"12px",borderRadius:12,border:`1px solid ${T.bdr}`,background:T.card,color:T.tx,fontSize:12,outline:"none",resize:"vertical",boxSizing:"border-box",fontFamily:"monospace"}}/>{htmlSrc&&<button onClick={()=>setHtmlSrc("")} style={{position:"absolute",top:8,right:8,width:24,height:24,borderRadius:12,background:T.rd,color:"#fff",fontSize:12,border:"none",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>}</div><button onClick={parseHTML} disabled={loading} style={{width:"100%",marginTop:8,padding:"14px",borderRadius:12,background:`linear-gradient(135deg,${T.ac},${T.pk})`,color:"#fff",fontSize:14,fontWeight:700,border:"none",opacity:loading?.5:1}}>{loading?"⏳":"🔍 AI đọc HTML"}</button></div>}
+
+          {inputMode==="idea" && <div><div style={{position:"relative"}}><textarea value={ideaText} onChange={e=>setIdeaText(e.target.value)} placeholder={"Gõ bất kỳ ý tưởng:\n• Áo funny cho nurse\n• Quà Valentine cho dog mom\n• Mug sarcastic cho introvert\n• Hoodie motivational cho gym"} rows={4} style={{width:"100%",padding:"12px",borderRadius:12,border:`1px solid ${T.bdr}`,background:T.card,color:T.tx,fontSize:14,outline:"none",resize:"vertical",boxSizing:"border-box",lineHeight:1.6}}/>{ideaText&&<button onClick={()=>setIdeaText("")} style={{position:"absolute",top:8,right:8,width:24,height:24,borderRadius:12,background:T.rd,color:"#fff",fontSize:12,border:"none",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>}</div><button onClick={genFromIdea} disabled={loading} style={{width:"100%",marginTop:8,padding:"14px",borderRadius:12,background:`linear-gradient(135deg,${T.ac},${T.pk})`,color:"#fff",fontSize:14,fontWeight:700,border:"none",opacity:loading?.5:1}}>{loading?"⏳":"💡 AI gen concept"}</button></div>}
+
           {images.length>0 && <div style={{marginTop:14}}><div style={{fontSize:12,fontWeight:700,color:T.tx2,marginBottom:6}}>📸 Ảnh ({images.length})</div><div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:6}}>{images.map((im,i)=><div key={i} style={{position:"relative",flexShrink:0}}><img src={im.url} style={{width:72,height:72,borderRadius:10,objectFit:"cover",border:`2px solid ${T.bdr}`}}/><button onClick={()=>setImages(p=>p.filter((_,j)=>j!==i))} style={{position:"absolute",top:-6,right:-6,width:22,height:22,borderRadius:11,background:T.rd,color:"#fff",fontSize:12,fontWeight:700,border:"none",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button></div>)}<label style={{width:72,height:72,borderRadius:10,border:`2px dashed ${T.bdr}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,color:T.txD,cursor:"pointer",flexShrink:0}}><input type="file" accept="image/*" multiple onChange={handleUpload} style={{display:"none"}}/>+</label></div></div>}
-          {productInfo && <div style={{marginTop:12,padding:12,borderRadius:12,background:T.gnS,border:`1px solid ${T.gn}25`}}><div style={{fontSize:11,fontWeight:700,color:T.gnT,marginBottom:4}}>📋 SP</div><div style={{fontSize:12,color:T.tx2,lineHeight:1.6,whiteSpace:"pre-wrap",maxHeight:120,overflowY:"auto"}}>{productInfo}</div></div>}
-          <button onClick={genIdeas} disabled={loading||(!images.length&&!productInfo)} style={{width:"100%",marginTop:16,padding:"18px",borderRadius:14,background:(loading||(!images.length&&!productInfo))?T.el:`linear-gradient(135deg,${T.ac},${T.pk})`,color:"#fff",fontSize:16,fontWeight:700,border:"none",opacity:(loading||(!images.length&&!productInfo))?.4:1}}>{loading?`⏳ ${loadMsg}`:"🎬 Tạo ý tưởng video"}</button>
+
+          {productInfo && <div style={{marginTop:12,padding:12,borderRadius:12,background:T.gnS,border:`1px solid ${T.gn}25`,position:"relative"}}><div style={{fontSize:11,fontWeight:700,color:T.gnT,marginBottom:4}}>📋 Thông tin SP</div><div style={{fontSize:12,color:T.tx2,lineHeight:1.6,whiteSpace:"pre-wrap",maxHeight:120,overflowY:"auto"}}>{productInfo}</div><button onClick={()=>{setProductInfo("");setProductName("");setProductNiche("")}} style={{position:"absolute",top:8,right:8,width:22,height:22,borderRadius:11,background:T.rd,color:"#fff",fontSize:11,border:"none",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button></div>}
+
+          {/* Duration selector */}
+          <div style={{marginTop:14,display:"flex",gap:8,alignItems:"center"}}>
+            <span style={{fontSize:12,fontWeight:600,color:T.tx2}}>⏱ Thời lượng:</span>
+            {[15,30,60,90,120,180].map(d=><button key={d} onClick={()=>setVideoDuration(d)} style={{padding:"8px 12px",borderRadius:8,border:videoDuration===d?`2px solid ${T.ac}`:`1px solid ${T.bdr}`,background:videoDuration===d?T.acS:"transparent",color:videoDuration===d?T.acT:T.txD,fontSize:12,fontWeight:600}}>{d<60?d+"s":d/60+"m"}</button>)}
+          </div>
+          <button onClick={genIdeas} disabled={loading||(!images.length&&!productInfo&&!productName&&!ideaText)} style={{width:"100%",marginTop:12,padding:"18px",borderRadius:14,background:(loading||(!images.length&&!productInfo&&!productName&&!ideaText))?T.el:`linear-gradient(135deg,${T.ac},${T.pk})`,color:"#fff",fontSize:16,fontWeight:700,border:"none",opacity:(loading||(!images.length&&!productInfo&&!productName&&!ideaText))?.4:1}}>{loading?`⏳ ${loadMsg}`:"🎬 Tạo ý tưởng video"}</button>
         </div>}
 
         {/* Step 2 */}
@@ -927,22 +1101,57 @@ export default function App() {
                 {extData?.snd&&<div style={{fontSize:11,color:T.txD,marginTop:6}}>🎵 {extData.snd}</div>}
               </div>
             </div>
-            {/* RIGHT: Scenes */}
+            {/* RIGHT: Simple mode for seller */}
             <div>
+              {/* Refine & regenerate */}
+              <div style={{marginBottom:12,padding:12,borderRadius:12,background:T.sf,border:`1px solid ${T.bdr}`}}>
+                <div style={{fontSize:12,fontWeight:700,color:T.acT,marginBottom:6}}>✏️ Chỉnh sửa ý tưởng</div>
+                <textarea value={refineText} onChange={e=>setRefineText(e.target.value)} placeholder={"Gõ yêu cầu chỉnh sửa:\n• Đổi sang phong cách funny hơn\n• Thêm phần giá sale\n• Nhấn mạnh quà tặng\n• Đổi màu pastel"} rows={3} style={{width:"100%",padding:"10px",borderRadius:10,border:`1px solid ${T.bdr}`,background:T.card,color:T.tx,fontSize:13,outline:"none",resize:"vertical",boxSizing:"border-box",lineHeight:1.5}}/>
+                <button onClick={()=>{if(refineText)setProductInfo(p=>p+"\nYêu cầu thêm: "+refineText);setStep("1");setTimeout(()=>genIdeas(),100)}} style={{width:"100%",marginTop:6,padding:"12px",borderRadius:10,background:`linear-gradient(135deg,${T.or},${T.pk})`,color:"#fff",fontSize:13,fontWeight:700,border:"none"}}>🔄 Gen lại với chỉnh sửa</button>
+              </div>
+
+              {/* Simple scene list */}
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                <span style={{fontSize:13,fontWeight:700,color:T.acT}}>Scenes ({scenes.length}) — kéo thả sắp xếp</span>
-                <div style={{display:"flex",gap:6}}>
-                  {undoStack.length>0&&<button onClick={undo} style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${T.or}40`,background:T.orS,color:T.orT,fontSize:11,fontWeight:600}}>↩ Undo</button>}
-                  <button onClick={addScene} style={{padding:"6px 14px",borderRadius:8,border:`1px solid ${T.bdr}`,background:T.card,color:T.tx2,fontSize:12}}>+ Thêm</button>
+                <span style={{fontSize:13,fontWeight:700,color:T.acT}}>Kịch bản ({scenes.length} scenes · {totalDuration}s)</span>
+                <button onClick={()=>setShowAdvanced(!showAdvanced)} style={{padding:"5px 10px",borderRadius:6,border:`1px solid ${T.bdr}`,background:showAdvanced?T.acS:"transparent",color:showAdvanced?T.acT:T.txD,fontSize:11}}>⚙️ {showAdvanced?"Ẩn chi tiết":"Chỉnh chi tiết"}</button>
+              </div>
+
+              {!showAdvanced ? (
+                /* SIMPLE MODE: just show text + voice */
+                <div style={{maxHeight:500,overflowY:"auto"}}>
+                  {scenes.map((sc,i)=>{
+                    const thumb=sceneImgs[i]?.src||images[sc.image_index]?.url;
+                    const isH=i===0,isC=i===scenes.length-1;
+                    const tc=isH?T.or:isC?T.gn:T.bl,tb=isH?T.orS:isC?T.gnS:T.blS,tl=isH?"HOOK":isC?"CTA":"BODY";
+                    return <div key={i} onClick={()=>previewScene(i)} style={{padding:10,borderRadius:10,background:T.sf,border:`1px solid ${T.bdr}`,marginBottom:6,cursor:"pointer"}}>
+                      <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                        <div style={{width:44,height:44,borderRadius:8,overflow:"hidden",background:T.card,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{thumb?<img src={thumb} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span>🖼</span>}</div>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                            <span style={{padding:"1px 6px",borderRadius:4,background:tb,color:tc,fontSize:10,fontWeight:700}}>{tl}</span>
+                            <span style={{fontSize:11,color:T.txD}}>{sc.duration}s</span>
+                          </div>
+                          <div style={{fontSize:13,fontWeight:600,color:T.tx}}>{sc.text||"(chưa có text)"}</div>
+                        </div>
+                      </div>
+                      {sc.voice&&<div style={{marginTop:4,fontSize:11,color:T.txD,lineHeight:1.4}}>🎙 {sc.voice}</div>}
+                    </div>
+                  })}
                 </div>
-              </div>
-              <div style={{maxHeight:600,overflowY:"auto",paddingRight:4}}>
-                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                  <SortableContext items={scenes.map(s=>s._id)} strategy={verticalListSortingStrategy}>
-                    {scenes.map((sc,i)=><SortableScene key={sc._id} scene={sc} index={i} total={scenes.length} sceneImg={sceneImgs[i]} uploadedImgs={images} onUpdate={updateScene} onRemove={removeScene} onRegen={regenSceneImg} onPreview={previewScene} onSelectImg={selectSceneImg}/>)}
-                  </SortableContext>
-                </DndContext>
-              </div>
+              ) : (
+                /* ADVANCED MODE: full editor */
+                <div style={{maxHeight:500,overflowY:"auto",paddingRight:4}}>
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                    <SortableContext items={scenes.map(s=>s._id)} strategy={verticalListSortingStrategy}>
+                      {scenes.map((sc,i)=><SortableScene key={sc._id} scene={sc} index={i} total={scenes.length} sceneImg={sceneImgs[i]} uploadedImgs={images} onUpdate={updateScene} onRemove={removeScene} onRegen={regenSceneImg} onPreview={previewScene} onSelectImg={selectSceneImg}/>)}
+                    </SortableContext>
+                  </DndContext>
+                  <div style={{display:"flex",gap:6,marginTop:6}}>
+                    {undoStack.length>0&&<button onClick={undo} style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${T.or}40`,background:T.orS,color:T.orT,fontSize:11,fontWeight:600}}>↩ Undo</button>}
+                    <button onClick={addScene} style={{padding:"6px 14px",borderRadius:8,border:`1px solid ${T.bdr}`,background:T.card,color:T.tx2,fontSize:12}}>+ Thêm scene</button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>}
