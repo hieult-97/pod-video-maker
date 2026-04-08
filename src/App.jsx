@@ -152,7 +152,14 @@ async function genBrief(groqKey, name, quote, niche, hasImgs){
 
 /* ─── VISION ANALYZE ─── */
 async function visionAnalyze(imgs){
+  // Support both uploaded files (base64) and URL-only images (from HTML parse)
   const content=await Promise.all(imgs.slice(0,4).map(async im=>{
+    // If image was loaded from URL (Etsy CDN) — send URL directly to Claude API
+    // Claude's servers fetch it server-side, bypassing browser CORS
+    if(im.srcUrl){
+      return{type:'image',source:{type:'url',url:im.srcUrl}}
+    }
+    // Uploaded file — convert to base64 via canvas
     const c=document.createElement('canvas')
     c.width=Math.min(im.img.naturalWidth,800); c.height=Math.min(im.img.naturalHeight,1400)
     c.getContext('2d').drawImage(im.img,0,0,c.width,c.height)
@@ -304,14 +311,24 @@ export default function App(){
       const urls=extractImgUrls(htmlSrc)
       const tm=htmlSrc.match(/<title[^>]*>([^<]+)<\/title>/i)
       if(tm&&!name)setName(tm[1].replace(/\s*[-|].*/,'').trim().slice(0,80))
-      if(!urls.length){notify('Không tìm thấy ảnh — thử upload thủ công',false);setLoading('');return}
-      notify(`🔍 Tìm thấy ${urls.length} ảnh, đang tải...`)
-      let n=0
-      await Promise.allSettled(urls.map(async url=>{
-        try{const r=await urlToImg(url);setImages(p=>[...p,r]);n++}catch{}
+      // Also extract rating/price info
+      const ratingM=htmlSrc.match(/(\d+(?:\.\d+)?)\s*(?:stars?|★)/i)
+      const reviewM=htmlSrc.match(/(\d[\d,]+)\s*(?:reviews?|ratings?)/i)
+      const saleM=htmlSrc.match(/(\d+)%\s*off/i)
+      
+      if(!urls.length){notify('Không tìm thấy ảnh trong HTML',false);setLoading('');return}
+      
+      // FIX: Add images immediately using srcUrl (display-only via <img> tag)
+      // No canvas, no CORS — just store the URL directly
+      // Claude Vision API can fetch these URLs server-side
+      const newImgs=urls.map(url=>({
+        url:url,          // for <img src="..."> display — works fine, no CORS for display
+        srcUrl:url,       // flag: this is a URL-sourced image, Vision will use URL mode
+        img:null,         // no Image object needed for display
       }))
+      setImages(p=>[...p,...newImgs])
       setHtmlSrc('')
-      notify(n>0?`📸 Tải được ${n} ảnh`:'Không tải được (CORS) — thử upload thủ công',n>0)
+      notify(`📸 Lấy được ${urls.length} ảnh từ trang — bấm AI đọc ảnh để phân tích design`)
     }catch(e){notify('Lỗi: '+e.message,false)}
     setLoading('')
   },[htmlSrc,name,notify])
@@ -420,7 +437,8 @@ export default function App(){
                 <div style={{display:'flex',gap:8,flexWrap:'wrap',width:'100%'}}>
                   {images.map((im,i)=>(
                     <div key={i} style={{position:'relative',flexShrink:0}}>
-                      <img src={im.url} style={{width:60,height:60,borderRadius:8,objectFit:'cover',border:`2px solid ${C.ac}50`}}/>
+                      <img src={im.url} style={{width:60,height:60,borderRadius:8,objectFit:'cover',border:`2px solid ${im.srcUrl?C.or:C.ac}50`}} onError={e=>{e.target.style.background=C.el;e.target.style.opacity='.3'}}/>
+                      {im.srcUrl&&<div style={{position:'absolute',bottom:0,left:0,right:0,fontSize:8,fontWeight:700,color:'#fff',background:'rgba(245,158,11,.85)',textAlign:'center',borderRadius:'0 0 6px 6px',padding:'1px 0'}}>Etsy</div>}
                       <button onClick={e=>{e.stopPropagation();setImages(p=>p.filter((_,j)=>j!==i))}} style={{position:'absolute',top:-5,right:-5,width:18,height:18,borderRadius:9,background:C.rd,color:'#fff',fontSize:10,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center'}}>×</button>
                     </div>
                   ))}
