@@ -535,6 +535,8 @@ export default function App(){
   const[refineText,setRefineText]=useState("")
   const[lang,setLang]=useState(()=>localStorage.getItem("pod-lang")||"vi")
   const[sceneVideos,setSceneVideos]=useState({})
+  const[htmlSrc,setHtmlSrc]=useState("")
+  const[productInfo,setProductInfo]=useState("")
 
   const canvasRef=useRef();const animRef=useRef();const startTimeRef=useRef(0);const recChunksRef=useRef([]);const audioRef=useRef();const voiceRef=useRef()
   const sensors=useSensors(useSensor(PointerSensor,{activationConstraint:{distance:5}}))
@@ -667,7 +669,6 @@ export default function App(){
       if(niche&&!productNiche)setProductNiche(niche)
       if(social)setProductInfo(social)
       setHtmlSrc("")
-      setInputMode("product")
     }catch(e){notify("Lỗi parse: "+e.message,"err")}
     setLoading(false)
   }
