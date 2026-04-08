@@ -377,6 +377,21 @@ function drawScene(ctx, W, H, img, text, sub, progress, transition, fontCSS = "'
     const ratio = Math.max(W/(sw||1), H/(sh||1)) * extraZoom * scale * pulse
     const dw = (sw||iw) * ratio, dh = (sh||ih) * ratio
     ctx.drawImage(img, sx, sy, sw||iw, sh||ih, (W-dw)/2 + panX, (H-dh)/2 + panY, dw, dh)
+  } else {
+    // No image fallback: animated gradient background
+    const hue = (sceneIdx * 45 + progress * 30) % 360
+    const bg1 = `hsl(${hue},60%,15%)`
+    const bg2 = `hsl(${(hue+40)%360},70%,8%)`
+    const fallGrad = ctx.createLinearGradient(0,0,W*Math.sin(progress*Math.PI*0.5),H)
+    fallGrad.addColorStop(0,bg1); fallGrad.addColorStop(1,bg2)
+    ctx.fillStyle=fallGrad; ctx.fillRect(0,0,W,H)
+    // Decorative circles
+    for(let c=0;c<3;c++){
+      ctx.beginPath()
+      ctx.arc(W*(0.3+c*0.25)+Math.sin(progress*Math.PI+c)*30, H*(0.3+c*0.15), W*0.15, 0, Math.PI*2)
+      ctx.fillStyle=`hsla(${(hue+c*60)%360},50%,30%,0.15)`
+      ctx.fill()
+    }
   }
 
   // Gradient overlay
@@ -716,29 +731,36 @@ export default function App() {
     try{
       const prodDesc = productInfo || productName || ideaText || "POD product"
       const hasImgs = images.length > 0
-      const d=await aiJSON(prov,apiKey,`Bạn là chuyên gia TikTok viral cho POD (thị trường Mỹ).
-
-SẢN PHẨM: ${prodDesc}
-${productNiche?"NICHE: "+productNiche:""}
-${hasImgs?`Seller có ${images.length} ẢNH SẢN PHẨM THẬT. Video dùng ảnh thật. Text và voice phải mô tả CỤ THỂ sản phẩm trong ảnh.`:"Không có ảnh — AI gen ảnh. ai_bg phải mô tả ảnh CÓ SẢN PHẨM ${productName||"POD"} trong khung hình (close-up, flat lay, on person), KHÔNG gen phong cảnh."}
-THỜI LƯỢNG: ${videoDuration}s
-
-4 ý tưởng. JSON ONLY:
-{"ideas":[{"title":"TIẾNG VIỆT","format":"Gift Idea/Humor/Before-After/Trend","description":"TIẾNG VIỆT 2 câu","viral_score":8,"why":"TIẾNG VIỆT",
-"scenes":[{"duration":3,"image_index":${hasImgs?"scene_number % "+images.length:"0"},
-"text":"ENGLISH — CỤ THỂ cho SP này. VD: 'This nurse tee says it all 😂' KHÔNG DÙNG 'New Alert' hay 'Amazing Product'",
-"subtext":"ENGLISH ngắn",
-"transition":"fade","font":"dm","textAnim":"typewriter",
-"voice":"ENGLISH voiceover CỤ THỂ — phải NÓI TÊN sản phẩm: 'Check out this hilarious nurse t-shirt that says...' KHÔNG NÓI chung chung.",
-"ai_bg":"${hasImgs?"backup only":"Close-up product shot: "+prodDesc+" on aesthetic background, 9:16, product MUST be visible"}"}],
-"total_duration":${videoDuration},
-"caption":"ENGLISH caption cụ thể cho SP <150 chars",
-"hashtags":["niche","tags"],
-"sound":"tên sound cụ thể trên TikTok",
-"full_voiceover":"ENGLISH — KỂ CÂU CHUYỆN về ${productName||prodDesc} từ đầu đến cuối, tự nhiên, hấp dẫn",
-"invideo_prompt":"ENGLISH prompt chi tiết","kling_prompt":"ENGLISH prompt"}]}
-
-${videoDuration}s, ${videoDuration<=15?"3-5":videoDuration<=30?"5-8":videoDuration<=60?"8-12":"12-20"} scenes. Hook đầu, CTA cuối.`)
+      const imgNote = hasImgs
+        ? "Seller has "+images.length+" REAL PRODUCT PHOTOS. Video uses real photos. Text and voice must describe THIS SPECIFIC product."
+        : "No photos. AI generates images. ai_bg must describe image WITH THE PRODUCT visible (close-up, flat lay, on person). DO NOT generate landscape/scenery."
+      const sceneCount = videoDuration<=15?"3-5":videoDuration<=30?"5-8":videoDuration<=60?"8-12":"12-20"
+      const prompt = [
+        "You are a TikTok viral expert for POD products (US market).",
+        "PRODUCT: " + prodDesc,
+        productNiche ? "NICHE: " + productNiche : "",
+        imgNote,
+        "DURATION: " + videoDuration + "s",
+        "",
+        "Generate 4 video concepts. Return ONLY valid JSON:",
+        '{"ideas":[{"title":"VIETNAMESE title","format":"Gift Idea/Humor/Before-After/Trend",',
+        '"description":"VIETNAMESE 2 sentences","viral_score":8,"why":"VIETNAMESE reason",',
+        '"scenes":[{"duration":3,"image_index":0,',
+        '"text":"ENGLISH overlay SPECIFIC to this product - e.g. This nurse tee says it all. DO NOT use generic text like New Alert or Amazing Product",',
+        '"subtext":"short ENGLISH","transition":"fade","font":"dm","textAnim":"typewriter",',
+        '"voice":"ENGLISH voiceover SPECIFIC - must NAME the product. e.g. Check out this hilarious nurse t-shirt that says...",',
+        '"ai_bg":"' + (hasImgs ? "backup" : "Close-up product shot of " + prodDesc + " on aesthetic background 9:16") + '"}],',
+        '"total_duration":' + videoDuration + ',',
+        '"caption":"ENGLISH caption specific to product under 150 chars",',
+        '"hashtags":["niche","specific","tags"],',
+        '"sound":"specific TikTok sound name",',
+        '"full_voiceover":"ENGLISH - tell a story about ' + (productName||prodDesc).replace(/"/g,"") + ' from start to end",',
+        '"invideo_prompt":"detailed ENGLISH prompt","kling_prompt":"ENGLISH prompt"}]}',
+        "",
+        sceneCount + " scenes. " + videoDuration + "s total. First=hook 3s, last=CTA.",
+        hasImgs ? "image_index cycles 0-" + (images.length-1) : "image_index=0"
+      ].filter(Boolean).join("\n")
+      const d = await aiJSON(prov, apiKey, prompt)
       if(!d?.ideas?.length)throw new Error("Thử lại"); setIdeas(d);setStep("2")
     }catch(e){notify(e.message,"err")} setLoading(false)
   }
