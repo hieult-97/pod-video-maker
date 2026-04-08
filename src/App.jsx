@@ -817,6 +817,7 @@ export default function App(){
 PRODUCT: "${prodName}"
 NICHE/AUDIENCE: "${productNiche||"general US buyers"}"
 ${productQuote?`DESIGN QUOTE ON PRODUCT: "${productQuote}" — build the entire story around this quote!`:""}
+${productInfo?`SOCIAL PROOF / EXTRA INFO: ${productInfo}`:""}
 ${imgInstructions}
 VIDEO DURATION: ${videoDuration}s
 SCENES NEEDED: ${sceneCount}
@@ -1200,25 +1201,31 @@ Return ONLY valid JSON:
                 </div>
               )}
 
-              {/* HTML paste — collapse toggle */}
-              <details style={{marginTop:10}}>
-                <summary style={{fontSize:12,color:T.txD,cursor:"pointer",padding:"6px 0",userSelect:"none",display:"flex",alignItems:"center",gap:6}}>
-                  <span>🔗</span> Có link trang SP? Paste HTML để lấy ảnh tự động
-                </summary>
-                <div style={{marginTop:8}}>
-                  <div style={{padding:"8px 12px",borderRadius:8,background:T.orS,border:`1px solid ${T.or}25`,fontSize:11,color:T.orT,lineHeight:1.6,marginBottom:8}}>
-                    Mở trang SP (Etsy/Amazon/Shopify) → <b>Ctrl+U</b> → <b>Ctrl+A</b> → <b>Ctrl+C</b> → paste vào đây.<br/>
-                    Tool sẽ trích xuất <b>ảnh sản phẩm + thông tin</b> tự động.
-                  </div>
-                  <div style={{position:"relative"}}>
-                    <textarea value={htmlSrc} onChange={e=>setHtmlSrc(e.target.value)} placeholder="Paste toàn bộ HTML source code..." rows={4} style={{width:"100%",padding:"10px 12px",borderRadius:10,border:`1px solid ${T.bdr}`,background:T.card,color:T.tx,fontSize:12,outline:"none",resize:"vertical",boxSizing:"border-box",fontFamily:"monospace",lineHeight:1.4}}/>
-                    {htmlSrc&&<button onClick={()=>setHtmlSrc("")} style={{position:"absolute",top:6,right:6,width:22,height:22,borderRadius:11,background:T.rd,color:"#fff",fontSize:11,border:"none",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>}
-                  </div>
-                  <button onClick={parseHTML} disabled={loading||!htmlSrc.trim()} style={{width:"100%",marginTop:6,padding:"12px",borderRadius:10,background:loading||!htmlSrc.trim()?T.el:`linear-gradient(135deg,${T.or}cc,${T.pk}cc)`,color:"#fff",fontSize:13,fontWeight:700,border:"none",opacity:loading||!htmlSrc.trim()?0.5:1}}>
-                    {loading?"⏳ Đang trích xuất ảnh...":"📸 Lấy ảnh + info từ HTML"}
-                  </button>
+              {/* HTML paste — always visible */}
+              <div style={{marginTop:12,padding:12,borderRadius:12,background:T.card,border:`1px solid ${T.bdr}`}}>
+                <div style={{fontSize:12,fontWeight:700,color:T.orT,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
+                  🔗 Paste HTML trang SP → lấy ảnh + info tự động
+                  <span style={{fontSize:10,fontWeight:400,color:T.txD}}>(Etsy / Amazon / Shopify)</span>
                 </div>
-              </details>
+                <div style={{padding:"7px 10px",borderRadius:7,background:T.orS,border:`1px solid ${T.or}25`,fontSize:11,color:T.orT,lineHeight:1.6,marginBottom:8}}>
+                  Mở trang SP → <b>Ctrl+U</b> → <b>Ctrl+A</b> → <b>Ctrl+C</b> → paste vào đây → AI tự lấy ảnh + tên + rating
+                </div>
+                <div style={{position:"relative"}}>
+                  <textarea value={htmlSrc} onChange={e=>setHtmlSrc(e.target.value)} placeholder="Paste toàn bộ HTML source code..." rows={3} style={{width:"100%",padding:"9px 12px",borderRadius:9,border:`1px solid ${htmlSrc?T.or:T.bdr}`,background:T.el,color:T.tx,fontSize:12,outline:"none",resize:"vertical",boxSizing:"border-box",fontFamily:"monospace",lineHeight:1.4,transition:"border .2s"}}/>
+                  {htmlSrc&&<button onClick={()=>setHtmlSrc("")} style={{position:"absolute",top:6,right:6,width:20,height:20,borderRadius:10,background:T.rd,color:"#fff",fontSize:11,border:"none",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>}
+                </div>
+                <button onClick={parseHTML} disabled={loading||!htmlSrc.trim()} style={{width:"100%",marginTop:7,padding:"11px",borderRadius:9,background:loading||!htmlSrc.trim()?T.el:`linear-gradient(135deg,${T.or},${T.pk})`,color:"#fff",fontSize:13,fontWeight:700,border:"none",opacity:loading||!htmlSrc.trim()?0.4:1,transition:"all .2s"}}>
+                  {loading?"⏳ Đang trích xuất...":"📸 Lấy ảnh + thông tin từ HTML"}
+                </button>
+              </div>
+
+              {/* productInfo display (social proof from HTML parse) */}
+              {productInfo&&(
+                <div style={{marginTop:8,padding:"8px 12px",borderRadius:9,background:T.gnS,border:`1px solid ${T.gn}25`,fontSize:12,color:T.gnT,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span>📊 {productInfo}</span>
+                  <button onClick={()=>setProductInfo("")} style={{width:18,height:18,borderRadius:9,background:"transparent",border:"none",color:T.gnT,fontSize:12,cursor:"pointer"}}>×</button>
+                </div>
+              )}
             </div>
 
             {/* Duration */}
